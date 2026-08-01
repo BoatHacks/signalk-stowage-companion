@@ -11,13 +11,28 @@ const DEFAULT_MGMT_BASE_PATH = '/plugins/signalk-stowage-mgmt'
 // This check runs in this plugin's own Node backend (plugin.start), not the
 // browser — a same-origin *relative* path (what the webapp itself uses,
 // per SPEC.md's same-origin assumption) has no meaning to Node's fetch, so
-// the backend needs an absolute URL. There's no documented Signal K plugin
-// API to ask the host server "what's your own port," so this defaults to
-// localhost + the PORT env var Signal K server itself honors, and falls
-// back further to Signal K's own default port. mgmtBaseUrl (plugin config)
-// overrides this outright for setups where that guess is wrong.
-function resolveMgmtBaseUrl (options) {
+// the backend needs an absolute URL.
+//
+// Signal K server exposes its own listening port/protocol to plugins via
+// app.config.settings (port, sslport, ssl) — the same fields signalk-server
+// itself reads internally (see e.g. src/mdns.js, src/interfaces/rest.js)
+// and the pattern real-world community plugins use to call back into their
+// own server. Prefer that over guessing from the PORT env var, which is
+// only set if the server happened to be *launched* with that env var —
+// not a reliable reflection of settings.json's configured port.
+function resolveMgmtBaseUrl (options, app) {
   if (options && options.mgmtBaseUrl) return options.mgmtBaseUrl
+
+  const settings = app && app.config && app.config.settings
+  if (settings && (settings.port || settings.sslport)) {
+    const ssl = !!settings.ssl
+    const port = ssl ? (settings.sslport || 443) : (settings.port || 3000)
+    return `${ssl ? 'https' : 'http'}://localhost:${port}${DEFAULT_MGMT_BASE_PATH}`
+  }
+
+  // Fallback for when app.config.settings isn't available (shouldn't
+  // normally happen against a real Signal K server, but keeps this
+  // function usable in isolation/tests without a full fake app).
   const port = process.env.PORT || 3000
   return `http://localhost:${port}${DEFAULT_MGMT_BASE_PATH}`
 }

@@ -13,7 +13,7 @@ module.exports = function (app) {
   let dependencyStatus = { available: null, error: null, checkedAt: null }
 
   async function refreshDependencyStatus () {
-    const mgmtBaseUrl = resolveMgmtBaseUrl(pluginOptions)
+    const mgmtBaseUrl = resolveMgmtBaseUrl(pluginOptions, app)
     const result = await checkStowageMgmtAvailable(mgmtBaseUrl)
     dependencyStatus = { ...result, checkedAt: new Date().toISOString() }
     if (!result.available) {
@@ -59,7 +59,7 @@ module.exports = function (app) {
         type: 'string',
         title: 'signalk-stowage-mgmt base URL override',
         description:
-          'Absolute URL this plugin’s backend uses to reach signalk-stowage-mgmt for its startup reachability check (e.g. http://localhost:3000/plugins/signalk-stowage-mgmt). Only needed if the default guess (localhost + this server’s port) is wrong. Does not affect the webapp itself, which always calls signalk-stowage-mgmt same-origin from the browser.',
+          'Absolute URL this plugin’s backend uses to reach signalk-stowage-mgmt for its startup reachability check (e.g. http://localhost:3000/plugins/signalk-stowage-mgmt). This plugin normally derives it automatically from this server’s own configured port/SSL setting — only set this if that still doesn’t work (e.g. behind a reverse proxy). Does not affect the webapp itself, which always calls signalk-stowage-mgmt same-origin from the browser.',
         default: ''
       }
     }

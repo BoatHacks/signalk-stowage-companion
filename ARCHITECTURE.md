@@ -223,10 +223,15 @@ Signal K plugin config fields:
 - SerpApi API key.
 - `signalk-stowage-mgmt` base URL override (`mgmtBaseUrl`) — used only by
   this plugin's own backend for its startup reachability check (§5);
-  defaults to `http://localhost:<PORT env var, or 3000>/plugins/
-  signalk-stowage-mgmt` since a Node backend can't resolve a same-origin
-  relative path the way a browser can. The browser-side webapp is
-  unaffected by this setting and always calls `signalk-stowage-mgmt`
+  defaults to `http(s)://localhost:<port>/plugins/signalk-stowage-mgmt`,
+  derived from this server's own `app.config.settings.port`/`sslport`/
+  `ssl` (the same fields signalk-server itself reads internally, and the
+  pattern real-world community plugins use to call back into their own
+  server) since a Node backend can't resolve a same-origin relative path
+  the way a browser can. Falls back to the `PORT` env var, then port
+  3000, only if `app.config.settings` is ever unavailable. The
+  browser-side webapp is unaffected by this setting and always calls
+  `signalk-stowage-mgmt`
   same-origin/relative, per SPEC.md's same-origin assumption.
 
 ## 10. Future Considerations
