@@ -1,24 +1,28 @@
 import { html, useState, useRef, useCallback } from '../vendor/preact-htm-standalone.js'
+import { BarcodeDetector } from './barcode-detector.js'
 
 // BarcodeDetector's live-video-stream mode (ARCHITECTURE.md §4's original
 // framing) needs real getUserMedia stream lifecycle handling that's hard to
-// get right without a real device/browser to test against. This MVP
+// get right without a real device/browser to test against. This
 // implementation instead uses a native <input type="file" capture> to snap
 // a still photo (opens the phone's camera directly on mobile browsers, no
-// getUserMedia permission dance of its own), then runs BarcodeDetector's
-// detect() against that still image. Live-preview scanning is a reasonable
+// getUserMedia permission dance of its own), then runs the vendored
+// ZXing-backed BarcodeDetector ponyfill against that still image —
+// unconditionally, not just as a fallback, so it works the same way on
+// every browser including Safari/iOS, which has no native implementation
+// of the Shape Detection API at all. Live-preview scanning is a reasonable
 // follow-up, not required for the capture flow to work.
-export const BARCODE_SUPPORTED = typeof window !== 'undefined' && 'BarcodeDetector' in window
+
+// Common retail/product barcode formats, plus code_128 (also used on some
+// spares/parts labels). Restricting formats (vs. the ponyfill's default of
+// "every format it knows") cuts down on spurious matches against
+// unrelated markings in a photo.
+const PRODUCT_BARCODE_FORMATS = ['upc_a', 'upc_e', 'ean_8', 'ean_13', 'code_128', 'itf']
 
 async function detectBarcodeInFile (file) {
-  const bitmap = await createImageBitmap(file)
-  try {
-    const detector = new window.BarcodeDetector()
-    const results = await detector.detect(bitmap)
-    return results.length ? results[0].rawValue : null
-  } finally {
-    bitmap.close && bitmap.close()
-  }
+  const detector = new BarcodeDetector({ formats: PRODUCT_BARCODE_FORMATS })
+  const results = await detector.detect(file)
+  return results.length ? results[0].rawValue : null
 }
 
 export function CaptureView ({ onCaptured }) {
@@ -57,15 +61,11 @@ export function CaptureView ({ onCaptured }) {
   return html`
     <div class="card">
       ${error ? html`<div class="error-banner">${error}</div>` : null}
-      ${BARCODE_SUPPORTED
-        ? html`
-          <input ref=${barcodeInputRef} type="file" accept="image/*" capture="environment"
-            style="display:none" onChange=${handleBarcodeFile} />
-          <p><button disabled=${busy} onClick=${() => barcodeInputRef.current.click()}>
-            Scan barcode
-          </button></p>
-        `
-        : html`<p class="muted">Barcode scanning isn't supported in this browser — take an item photo and fill in the details yourself.</p>`}
+      <input ref=${barcodeInputRef} type="file" accept="image/*" capture="environment"
+        style="display:none" onChange=${handleBarcodeFile} />
+      <p><button disabled=${busy} onClick=${() => barcodeInputRef.current.click()}>
+        ${busy ? 'Scanning…' : 'Scan barcode'}
+      </button></p>
       <input ref=${photoInputRef} type="file" accept="image/*" capture="environment"
         style="display:none" onChange=${handlePhotoFile} />
       <p><button disabled=${busy} onClick=${() => photoInputRef.current.click()}>

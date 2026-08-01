@@ -1,9 +1,9 @@
-import { html, useState, useEffect, useRef, useCallback } from '../vendor/preact-htm-standalone.js'
+import { html, useState, useEffect, useRef, useCallback, useMemo } from '../vendor/preact-htm-standalone.js'
 import { listLocations, listCategories, createItemFromDraft } from './mgmt-api.js'
 import { identifyBarcode, searchManual, fetchManualPdf } from './identify-api.js'
-import { suggestedCategoryName, looksElectricOrElectronic, findExistingCategory } from './draft-helpers.js'
+import { suggestedCategoryName, looksElectricOrElectronic, findExistingCategory, sortLocationsAsTree } from './draft-helpers.js'
 import { parseLocationIdFromUrl } from './location-qr.js'
-import { BARCODE_SUPPORTED } from './capture.js'
+import { BarcodeDetector } from './barcode-detector.js'
 
 function fileToDataUri (file) {
   return new Promise((resolve, reject) => {
@@ -12,22 +12,6 @@ function fileToDataUri (file) {
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
-}
-
-// Indents each location by how many parent_id hops it is from a root, so a
-// flat <select> reads roughly like a tree without needing real recursive
-// tree UI for MVP.
-function locationDepth (locations, location) {
-  let depth = 0
-  let current = location
-  const byId = new Map(locations.map((l) => [l.id, l]))
-  const seen = new Set()
-  while (current && current.parent_id != null && !seen.has(current.id)) {
-    seen.add(current.id)
-    current = byId.get(current.parent_id)
-    depth += 1
-  }
-  return depth
 }
 
 export function DraftView ({ capture, onDiscard }) {
@@ -120,9 +104,8 @@ export function DraftView ({ capture, onDiscard }) {
     e.target.value = ''
     if (!file) return
     try {
-      const bitmap = await createImageBitmap(file)
-      const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
-      const results = await detector.detect(bitmap)
+      const detector = new BarcodeDetector({ formats: ['qr_code'] })
+      const results = await detector.detect(file)
       const raw = results[0] && results[0].rawValue
       const id = raw ? parseLocationIdFromUrl(raw) : null
       if (id) setLocationId(id)
@@ -150,6 +133,8 @@ export function DraftView ({ capture, onDiscard }) {
   const toggleCategory = useCallback((id) => {
     setSelectedCategoryIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
   }, [])
+
+  const orderedLocations = useMemo(() => sortLocationsAsTree(locations), [locations])
 
   return html`
     <div class="card">
@@ -203,16 +188,14 @@ export function DraftView ({ capture, onDiscard }) {
         <label>Location<br/>
           <select value=${locationId || ''} onChange=${(e) => setLocationId(e.target.value || null)} style="width:100%">
             <option value="">— unlocated —</option>
-            ${locations.map((l) => html`
-              <option value=${l.id}>${'  '.repeat(locationDepth(locations, l))}${l.name}</option>
+            ${orderedLocations.map((l) => html`
+              <option value=${l.id}>${'  '.repeat(l.depth)}${l.name}</option>
             `)}
           </select>
         </label>
       </p>
-      ${BARCODE_SUPPORTED ? html`
-        <input ref=${locationScanInputRef} type="file" accept="image/*" capture="environment" style="display:none" onChange=${handleLocationScan} />
-        <p><button onClick=${() => locationScanInputRef.current.click()}>Scan location label instead</button></p>
-      ` : null}
+      <input ref=${locationScanInputRef} type="file" accept="image/*" capture="environment" style="display:none" onChange=${handleLocationScan} />
+      <p><button onClick=${() => locationScanInputRef.current.click()}>Scan location label instead</button></p>
 
       ${manual && manual.status === 'matched' ? html`
         <p>Manual found: <a href=${manual.url} target="_blank" rel="noopener">${manual.title || manual.url}</a>

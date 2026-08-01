@@ -33,3 +33,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirming SerpApi's Google Lens API requires a publicly-hosted image
   URL, which a phone photo on a typically LAN-only Signal K server
   doesn't have — see SPEC.md §11.
+
+### Fixed
+
+- `status-api.js` and `identify-api.js` used a bare relative fetch path,
+  which only resolves correctly when the browser's current URL happens to
+  end in a trailing slash — every call could 404 depending on how Signal
+  K server linked to the plugin webapp. Both now use an absolute base
+  path, matching `mgmt-api.js` and `signalk-stowage-mgmt`'s own
+  `public/js/api.js` convention.
+- The `signalk-stowage-mgmt` startup reachability check now derives its
+  target URL from this server's own `app.config.settings`
+  (port/sslport/ssl) instead of guessing from the `PORT` env var, and
+  treats a 401/403 response as "reachable, Signal K security is enabled"
+  rather than "unreachable" — the check itself has no logged-in session,
+  so a 401/403 there is expected and doesn't mean `signalk-stowage-mgmt`
+  is actually missing.
+- Barcode scanning now works on Safari/iOS, which never implemented the
+  native Shape Detection API `capture.js` originally depended on. Both
+  item-barcode and location-QR-label scanning now go through a vendored,
+  MIT-licensed `barcode-detector` ponyfill (ZXing-C++ compiled to
+  WebAssembly), with the `.wasm` binary served locally rather than from
+  the package's jsDelivr CDN default, so scanning still works with no
+  third-party network dependency.
+- The location picker in the Draft review screen is now ordered to match
+  the actual location tree (parent immediately followed by its children,
+  siblings alphabetical) instead of whatever flat order
+  `signalk-stowage-mgmt`'s `GET /locations` happens to return.

@@ -65,12 +65,19 @@ results through this plugin's backend before it reaches
 
 - `app.js` — top-level component: capture/identifying/draft-ready/created
   flow state (SPEC.md §3), renders the current step.
-- `capture.js` — camera access, `BarcodeDetector` integration and
-  vendored-decoder fallback (§4), photo capture.
+- `capture.js` — camera access via a snapped still photo, barcode
+  detection via `barcode-detector.js` (§4), item photo capture.
+- `barcode-detector.js` — wraps the vendored `barcode-detector` ponyfill,
+  pointing its ZXing-wasm reader at the locally-vendored `.wasm` file
+  instead of the package's jsDelivr CDN default (§4, §6). Used by both
+  `capture.js` (item barcode) and `draft.js` (location QR label).
 - `draft.js` — the Draft review screen: editable fields, location picker
-  (calls `signalk-stowage-mgmt`'s `GET /locations` directly), category
-  picker/new-category confirmation (`GET /categories`), manual
-  attachment preview/remove.
+  ordered to match the actual location tree (`sortLocationsAsTree` in
+  `draft-helpers.js`, calls `signalk-stowage-mgmt`'s `GET /locations`
+  directly), category picker/new-category confirmation
+  (`GET /categories`), manual attachment preview/remove, and a
+  location-QR-label scan (via `barcode-detector.js`) as an alternative
+  to the dropdown.
 - `location-qr.js` — parses a scanned `signalk-stowage-mgmt` location
   label's `location=<id>` query param (SPEC.md §5, §11) to pre-fill the
   Draft's location — pure logic, unit-testable without DOM, matching
@@ -96,7 +103,7 @@ one capture session and discarded on confirm or navigation away.
 | Backend runtime | Node.js (same minimum as `signalk-stowage-mgmt`) | Consistency across the two plugins; no backend feature here needs anything newer |
 | Backend framework | None — the server's own router | Matches `signalk-stowage-mgmt`; avoids an `express` runtime dependency |
 | Frontend framework | Preact + htm, vendored standalone | Matches `signalk-stowage-mgmt`'s buildless approach (SPEC.md decision, §11) — no bundler, works offline for everything except identification |
-| Barcode scanning | Browser `BarcodeDetector` API against a snapped still photo (`<input type="file" capture>`), no vendored fallback decoder | Snap-and-decode needs no `getUserMedia` stream lifecycle handling and no vendored payload; browsers without `BarcodeDetector` fall back to manual entry via the item-photo path rather than a vendored decoder library — narrower than originally planned (§4 used to call for a vendored fallback + live video), scoped down during implementation to avoid shipping an unverified third-party decoder. See §10 |
+| Barcode scanning | [`barcode-detector`](https://github.com/Sec-ant/barcode-detector) (MIT), a Barcode Detection API ponyfill backed by ZXing-C++ compiled to WebAssembly, vendored standalone; used against a snapped still photo (`<input type="file" capture>`), not live video | Used unconditionally, not as a native-API fallback — Safari/iOS never implemented the native Shape Detection API at all, so relying on it would mean no barcode scanning on iOS. Snap-and-decode still needs no `getUserMedia` stream lifecycle handling. The `.wasm` binary is vendored and pointed at locally (not the package's own jsDelivr CDN default) to keep the "no third-party network dependency" property; see `public/js/barcode-detector.js` |
 | Barcode/product lookup | [UPCItemDB](https://www.upcitemdb.com/) | Usable free tier (100 lookups/day) for MVP; no scraping/ToS risk. The only automated identification path for MVP — no photo-based path (SPEC.md §11) |
 | Manual-PDF search | [SerpApi](https://serpapi.com/) (Google web search) | ToS-compliant, non-scraping; usable free tier (250 searches/month) for MVP. Not used for image search — SerpApi's Google Lens engine requires a publicly-hosted image URL, which a phone photo on a LAN-only Signal K server doesn't have (SPEC.md §11) |
 | Testing | `node --test` | Matches `signalk-stowage-mgmt`; same rationale (built-in, no extra devDependency) |
@@ -154,8 +161,8 @@ one capture session and discarded on confirm or navigation away.
   as raw bytes with a server-determined filename/MIME type — not
   trusted/executed by this plugin itself, and `signalk-stowage-mgmt`
   already treats attachments as opaque blobs (no parsing).
-- **Camera/barcode input**: `BarcodeDetector` and the vendored fallback
-  decoder process image data only; no dynamic code execution from scanned
+- **Camera/barcode input**: the vendored ZXing-wasm-backed detector
+  processes image data only; no dynamic code execution from scanned
   content.
 - **Input validation**: proportional to the same single-user,
   typically-security-disabled deployment context as `signalk-stowage-mgmt`
@@ -182,15 +189,23 @@ public/
   style.css
   js/
     app.js                Capturing vs. everything-after-a-capture state
-    capture.js             snap-a-photo barcode scan (BarcodeDetector) + item photo capture
+    capture.js             snap-a-photo barcode scan + item photo capture
     draft.js                review screen: identification, category/location pickers, confirm
     draft-helpers.js        pure logic pulled out of draft.js for unit testing
+                            (category suggestions, location tree ordering)
     location-qr.js          parses signalk-stowage-mgmt location deep links
+    barcode-detector.js     wraps the vendored ponyfill, points it at the
+                            local .wasm instead of jsDelivr
     mgmt-api.js             fetch wrapper + create-on-confirm sequence for signalk-stowage-mgmt's API
     identify-api.js         fetch wrapper for this plugin's own /identify routes
     status-api.js           fetch wrapper for this plugin's own /status route
   vendor/
     preact-htm-standalone.js
+    barcode-detector/
+      ponyfill.js            barcode-detector v3.2.1 (MIT)
+      zxing-exported.js      zxing-wasm v3.1.1 JS glue (MIT), bundled by barcode-detector
+      zxing_reader.wasm      matching compiled ZXing-C++ reader (Apache-2.0 core)
+      LICENSE
   assets/icons/             (not yet populated)
 
 test/
@@ -262,20 +277,18 @@ Signal K plugin config fields:
   accepts uploaded bytes directly (e.g. Google Cloud Vision's
   web-detection API) at the cost of a heavier credential setup than a
   plain API key.
-- **Live-video barcode scanning and a vendored fallback decoder.** §4
-  originally called for `getUserMedia`-driven live scanning plus a
-  vendored pure-JS decoder for browsers without `BarcodeDetector`. Scoped
-  down during implementation to snap-a-photo + `BarcodeDetector` only
-  (§4) — live video needs real device/browser testing to get stream
-  lifecycle handling right, and vendoring a third-party decoder needs its
-  license and correctness verified, neither of which was practical to do
-  blind. Browsers without `BarcodeDetector` (mainly non-Chromium mobile
-  browsers) currently have no automated barcode path at all — manual
-  entry via the item-photo capture is the only route. Worth revisiting
-  against a real device before this ships broadly.
+- **Live-video barcode scanning.** §4 originally called for
+  `getUserMedia`-driven live scanning; still uses snap-a-photo instead
+  (now via the vendored `barcode-detector` ponyfill rather than the
+  native API, so this applies uniformly across browsers) since live
+  video needs real device/browser testing to get stream lifecycle
+  handling right, which wasn't practical to do blind. Worth revisiting
+  against a real device if snap-and-decode turns out to be too slow a
+  loop in practice.
 - **Recursive location tree UI.** `draft.js`'s location picker is a flat,
   indented `<select>` (SPEC.md §7's "tree/search picker" scoped down to
-  the simplest thing that shows hierarchy at all) rather than
-  `signalk-stowage-mgmt`'s actual recursive tree component with search.
-  Fine for boats with a modest location count; revisit if that turns out
-  to not scale.
+  the simplest thing that shows hierarchy at all), now at least ordered
+  to match the actual location tree (`sortLocationsAsTree` in
+  `draft-helpers.js`) rather than `signalk-stowage-mgmt`'s actual
+  recursive tree component with search. Fine for boats with a modest
+  location count; revisit if that turns out to not scale.
