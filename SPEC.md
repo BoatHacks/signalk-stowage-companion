@@ -7,9 +7,10 @@
 `signalk-stowage-companion` is a Signal K server plugin that makes adding
 items to a boat's stowage inventory fast enough to actually happen, from a
 phone, in the moment an item is stowed. It is a **capture front-end**, not
-its own inventory system: it identifies an item (photo and/or barcode
-scan), enriches it with a name/category/description and, where applicable,
-a manufacturer's manual PDF, and then creates it in
+its own inventory system: it captures a photo and/or barcode scan of an
+item, identifies it from the barcode where possible, enriches it with a
+name/category/description and, where applicable, a manufacturer's manual
+PDF, and then creates it in
 [`signalk-stowage-mgmt`](https://github.com/BoatHacks/signalk-stowage-mgmt)
 via that plugin's REST API — the same system that already owns locations,
 quantities, expiry tracking, and attachments.
@@ -43,9 +44,10 @@ during capture, rather than inventing a second label scheme.
 
 - **Capture** — the phone-camera step that produces a barcode value and/or
   one or more photos of an item, before any identification has happened.
-- **Identification** — the process of turning a capture into a candidate
-  name, category, and description, via barcode lookup and/or image search.
-  May fail or return nothing usable.
+- **Identification** — the process of turning a scanned barcode into a
+  candidate name, category, and description, via barcode lookup. May fail
+  or return nothing usable. A capture with no barcode (photo only) has no
+  identification step for MVP — see §11's photo-identification decision.
 - **Draft** — an in-progress, not-yet-created item: the editable,
   pre-filled result of identification, shown on the review screen. Exists
   only in the companion app's UI state until the user confirms it.
@@ -78,7 +80,9 @@ A capture session moves through:
 
 1. **Capturing** — user is taking a photo and/or scanning a barcode.
 2. **Identifying** — companion is querying online sources (barcode lookup,
-   image search, manual search); async, may take a few seconds.
+   then manual search if the item looks electric/electronic); async, may
+   take a few seconds. Skipped entirely for a photo-only capture (no
+   barcode) — see §11.
 3. **Draft ready** — a review screen with pre-filled (possibly empty)
    fields: name, category (existing or new-pending-confirmation),
    description, location, item photo, manual attachment (if found).
@@ -88,8 +92,10 @@ A capture session moves through:
 
 ### 3.2 Transitions
 
-- Capturing → Identifying: automatic once a barcode is scanned or a photo
-  is taken.
+- Capturing → Identifying: automatic once a barcode is scanned. A
+  photo-only capture (no barcode) skips straight to Draft ready with
+  blank fields plus the captured photo — same end state as a failed
+  lookup, just without attempting one (§11).
 - Identifying → Draft ready: always, whether or not identification found
   anything — a failed/empty lookup produces a draft with blank fields plus
   the captured photo (see §11, no-match handling).
@@ -114,8 +120,7 @@ This plugin holds no persistent domain entities of its own (see §8). Its
 only in-memory/session-lived shape is the **Draft**:
 
 - `barcode` (string, optional — present if capture started from a scan)
-- `photos` (0–4 image blobs: user-taken item photo, and/or candidate
-  photos from image search, before the user picks/keeps one)
+- `photos` (0–4 user-taken photo blobs of the item)
 - `name`, `description` (strings, editable, pre-filled by identification)
 - `category` — either an existing category (`{ id, name }`) or a
   pending-new category name (string) awaiting user confirmation
@@ -137,14 +142,11 @@ entities from that point on, per that plugin's SPEC.md §3.
   camera permission.
 - **Barcode/product lookup** — [UPCItemDB](https://www.upcitemdb.com/)
   resolves a scanned barcode to a candidate name/category/description.
-  Free tier: 100 lookups/day.
-- **Image search** — when identification starts from a photo rather than
-  (or in addition to) a barcode, [SerpApi](https://serpapi.com/)'s Google
-  Lens engine finds 1–4 candidate reference photos and supporting
-  name/category guesses. Free tier: 250 searches/month.
+  Free tier: 100 lookups/day. The only automated identification path for
+  MVP (§11) — a photo-only capture has no equivalent lookup.
 - **Manual search** — a SerpApi web search for `"<brand> <model> manual
   filetype:pdf"`, for electric/electronic items specifically. No
-  manufacturer-site-guessing step (see §12) — one search strategy, kept
+  manufacturer-site-guessing step (see §11) — one search strategy, kept
   simple for MVP.
 - **`signalk-stowage-mgmt` REST API** — `GET /locations` for the location
   picker; `GET /categories` for existing categories; all writes on
@@ -199,14 +201,14 @@ applies to `signalk-maintenance-tracker` today.
 Primary flow, phone-first:
 
 1. **Capture** — big "scan barcode" / "take photo" actions.
-2. **Identifying** — brief loading state while lookups run.
+2. **Identifying** — brief loading state while the barcode lookup runs
+   (skipped for a photo-only capture — straight to Review).
 3. **Review** (the Draft, §3/§4) — pre-filled, fully editable: name,
    category (existing chip picker + "add new" needing confirmation),
    description, location (tree/search picker, or pre-filled from a
-   scanned location QR label), item photo (captured photo, or pick from
-   1–4 image-search candidates), manual PDF (shown if found, removable).
-   A "retry identification" action is available when
-   `identification_status` is `failed` or `no_match`.
+   scanned location QR label), item photo (the captured photo), manual
+   PDF (shown if found, removable). A "retry identification" action is
+   available when `identification_status` is `failed`.
 4. **Confirm** → creates the item in `signalk-stowage-mgmt` (§3.2); on
    success, offer "add another" to loop back to Capture.
 
@@ -245,10 +247,11 @@ state (items, locations, categories, attachments, thumbnails) lives in
 ### 10.1 MVP Features
 
 - Barcode scan and/or item photo capture from a phone browser.
-- Identification: barcode → product lookup; photo → image search for
-  name/category/description candidates and reference photos.
-- Manual PDF lookup for electric/electronic items (manufacturer-site
-  heuristic, then general web search fallback).
+- Identification: barcode → product lookup only (§11) — a photo-only
+  capture goes straight to a blank, editable draft with the captured
+  photo.
+- Manual PDF lookup for electric/electronic items via a single SerpApi
+  web search (§11).
 - Review/edit screen (Draft) before anything is written.
 - Location selection via `GET /locations` picker or scanning a
   `signalk-stowage-mgmt` location QR label.
@@ -277,6 +280,12 @@ state (items, locations, categories, attachments, thumbnails) lives in
   streams.
 - **"Add another one of these" quick-restock flow** — deferred; a natural
   follow-up once the core capture-and-create loop ships.
+- **Photo-based reverse image search** — deferred; SerpApi's Google Lens
+  API needs a publicly-hosted image URL, which a phone photo captured on
+  a boat's (typically LAN-only) Signal K server doesn't have. Revisit if
+  a reasonable way to give a captured photo a temporary public URL (or a
+  different provider that accepts uploaded bytes directly) turns out to
+  be worth the added infrastructure — see §11.
 
 ## 11. Design Decisions
 
@@ -308,13 +317,13 @@ state (items, locations, categories, attachments, thumbnails) lives in
   less surprising than one that silently vanished after the user thought
   they'd confirmed it. The review screen instead reports which step
   failed and offers retry.
-- **UPCItemDB for barcode lookup, SerpApi for image search and manual
-  search.** Both have usable free tiers for MVP and neither requires
-  scraping (unlike several "Google Lens API" offerings that are
-  ToS-risky reverse-engineered scrapers) — SerpApi is a paid,
-  ToS-compliant service that happens to also have a free tier, and
-  covers both the image-search and manual-search needs with one
-  integration instead of two.
+- **UPCItemDB for barcode lookup, SerpApi for manual-PDF search.** Both
+  have usable free tiers for MVP and neither requires scraping (unlike
+  several "Google Lens API" offerings that are ToS-risky
+  reverse-engineered scrapers) — SerpApi is a paid, ToS-compliant service
+  that happens to also have a free tier. SerpApi was originally also
+  meant to cover photo-based image search, but that's dropped for MVP —
+  see the photo-identification decision below.
 - **No manufacturer-site-guessing heuristic for manual search.**
   Originally considered trying to derive a manufacturer's own
   support/downloads domain from the brand name before falling back to a
@@ -324,6 +333,18 @@ state (items, locations, categories, attachments, thumbnails) lives in
   <model> manual filetype:pdf"` gets most of the same result with one
   code path instead of two. Revisit only if the plain search strategy
   turns out to miss often enough in practice to justify the complexity.
+- **Photo-only capture skips identification entirely for MVP, rather than
+  attempting reverse image search.** Discovered while implementing: SerpApi's
+  Google Lens API requires a publicly-hosted image URL, not uploaded bytes
+  or a data URI — confirmed against SerpApi's own documentation, which
+  states the `url` parameter must point at an already-public image. A
+  boat's Signal K server is typically LAN-only, so a phone photo captured
+  there has no public URL to hand SerpApi without adding real
+  infrastructure (temporary cloud hosting, or a provider that accepts
+  direct uploads, e.g. Google Cloud Vision's web-detection API — heavier
+  to configure than a plain API key). Barcode lookup (UPCItemDB) and
+  manual-PDF search (a text-only SerpApi query) are unaffected — this
+  only narrows what happens when there's no barcode to scan. See §10.2.
 - **Offline degrades identification only, not the whole flow.**
   `signalk-stowage-mgmt` is explicitly designed to work with no internet;
   since this plugin talks to it same-server, there's no reason capture,
@@ -341,4 +362,4 @@ state (items, locations, categories, attachments, thumbnails) lives in
 
 None outstanding — the identification-provider questions this section
 originally tracked were resolved during the ARCHITECTURE brainstorm (see
-§12 for the choices and reasoning).
+§11 for the choices and reasoning).

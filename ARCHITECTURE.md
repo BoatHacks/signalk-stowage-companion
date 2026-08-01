@@ -19,10 +19,10 @@ signalk-server ── mounts plugin router at /plugins/signalk-stowage-companion
   ▼
 plugin/index.js ── startup dependency check, route registration
   │
-  ├── plugin/routes/identify.js ── proxies barcode/image/manual lookups
+  ├── plugin/routes/identify.js ── proxies barcode + manual-PDF lookups
   │     │
   │     ▼
-  │   UPCItemDB and SerpApi (SPEC.md §5, §12)
+  │   UPCItemDB and SerpApi (SPEC.md §5, §11)
   │
   └── (no local database)
 
@@ -47,12 +47,14 @@ results through this plugin's backend before it reaches
   registers the identification route, and runs the
   `signalk-stowage-mgmt` presence/version check (§5) before completing
   startup.
-- `routes/identify.js` — one router module: `POST /identify` (barcode or
-  photo in, candidate name/category/description/photos out) and
-  `POST /identify/manual` (given identification results, search for a
-  manual PDF). Calls UPCItemDB (barcode lookups) and SerpApi (image
-  search, manual-PDF web search) — see §4, §5. Provider credentials come
-  from Signal K plugin config (§9 below), never from the client.
+- `routes/identify.js` — one router module: `POST /identify/barcode`
+  (barcode in, candidate name/category/description out — the only
+  automated identification path for MVP, per SPEC.md §11) and
+  `POST /identify/manual` (given a name/model, search for a manual PDF).
+  Calls UPCItemDB (barcode lookups) and SerpApi (manual-PDF web search)
+  — see §4, §5. Provider credentials come from Signal K plugin config
+  (§9 below), never from the client. No photo/image-search endpoint —
+  dropped for MVP (SPEC.md §11).
 - `mgmtClient.js` — a thin wrapper around `fetch` calls to
   `signalk-stowage-mgmt`'s API, used only by `index.js`'s startup check
   (§5) — the webapp itself talks to `signalk-stowage-mgmt` directly, not
@@ -95,8 +97,8 @@ one capture session and discarded on confirm or navigation away.
 | Backend framework | None — the server's own router | Matches `signalk-stowage-mgmt`; avoids an `express` runtime dependency |
 | Frontend framework | Preact + htm, vendored standalone | Matches `signalk-stowage-mgmt`'s buildless approach (SPEC.md decision, §11) — no bundler, works offline for everything except identification |
 | Barcode scanning | Browser `BarcodeDetector` API, with a vendored pure-JS decoder as fallback | `BarcodeDetector` (Chrome/Android) needs no vendored payload or CPU-heavy decode; a vendored fallback (e.g. a `.mjs`-packaged zxing/zbar build, license/size TBD at implementation time) covers browsers without it, keeping the "works from any phone browser" requirement without a build step |
-| Barcode/product lookup | [UPCItemDB](https://www.upcitemdb.com/) | Usable free tier (100 lookups/day) for MVP; no scraping/ToS risk |
-| Image search & manual-PDF search | [SerpApi](https://serpapi.com/) (Google Lens engine for image search, Google web search for manual PDFs) | One ToS-compliant, non-scraping provider covers both needs; usable free tier (250 searches/month) for MVP |
+| Barcode/product lookup | [UPCItemDB](https://www.upcitemdb.com/) | Usable free tier (100 lookups/day) for MVP; no scraping/ToS risk. The only automated identification path for MVP — no photo-based path (SPEC.md §11) |
+| Manual-PDF search | [SerpApi](https://serpapi.com/) (Google web search) | ToS-compliant, non-scraping; usable free tier (250 searches/month) for MVP. Not used for image search — SerpApi's Google Lens engine requires a publicly-hosted image URL, which a phone photo on a LAN-only Signal K server doesn't have (SPEC.md §11) |
 | Testing | `node --test` | Matches `signalk-stowage-mgmt`; same rationale (built-in, no extra devDependency) |
 | CI/Release | GitHub Actions, same pattern as `signalk-stowage-mgmt`'s `plugin-ci.yml` / `cut-release.yml` | Consistency; OIDC trusted publishing to npm |
 
@@ -124,11 +126,11 @@ one capture session and discarded on confirm or navigation away.
     /items/:id/categories` — same-origin, direct from `mgmt-api.js`
     (SPEC.md §6.1). No version check on these calls themselves; the
     startup check is the only compatibility gate.
-- **UPCItemDB** (barcode lookup) and **SerpApi** (image search,
-  manual-PDF web search) — external HTTP APIs, called only from
+- **UPCItemDB** (barcode lookup) and **SerpApi** (manual-PDF web
+  search) — external HTTP APIs, called only from
   `plugin/routes/identify.js`, never from the browser directly (keeps
-  credentials server-side). See SPEC.md §5, §12 for the choice and
-  reasoning.
+  credentials server-side). See SPEC.md §5, §11 for the choice and
+  reasoning, including why photo-based image search isn't part of this.
 - **npm registry** — OIDC trusted publishing, same pattern as
   `signalk-stowage-mgmt`.
 
@@ -163,7 +165,7 @@ plugin/
   index.js         plugin entrypoint, startup dependency check, route registration
   mgmtClient.js     signalk-stowage-mgmt startup-check client
   routes/
-    identify.js     POST /identify, POST /identify/manual
+    identify.js     POST /identify/barcode, POST /identify/manual
 
 public/
   index.html
@@ -175,6 +177,7 @@ public/
     location-qr.js   parses signalk-stowage-mgmt location deep links
     mgmt-api.js      fetch wrapper for signalk-stowage-mgmt's API
     identify-api.js  fetch wrapper for this plugin's own /identify routes
+                     (barcode lookup + manual search only, no image search)
   vendor/
     preact-htm-standalone.js
     <barcode-decoder>.mjs   (fallback decoder, TBD per §4)
@@ -231,8 +234,14 @@ Signal K plugin config fields:
   may be worth adding once real usage patterns are known, without
   changing the stateless-backend framing in SPEC.md §8.
 - **Manufacturer-site-guessing heuristic for manual search.** Dropped for
-  MVP in favor of a single SerpApi query (SPEC.md §12) — revisit only if
+  MVP in favor of a single SerpApi query (SPEC.md §11) — revisit only if
   that plain search strategy misses often enough in practice.
 - **Quick-restock flow** (SPEC.md §10.2) would reuse the same identify →
   draft → create pipeline with a pre-filled draft from an existing item,
   rather than needing new architecture.
+- **Photo-based reverse image search** (SPEC.md §10.2, §11). If pursued
+  later: either give a captured photo a temporary public URL before
+  calling SerpApi's Google Lens engine, or switch to a provider that
+  accepts uploaded bytes directly (e.g. Google Cloud Vision's
+  web-detection API) at the cost of a heavier credential setup than a
+  plain API key.
