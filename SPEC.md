@@ -240,7 +240,12 @@ state (items, locations, categories, attachments, thumbnails) lives in
 - Signal K's own security setting governs API access the same way it
   governs `signalk-stowage-mgmt` itself (see that plugin's README.md "A
   note on auth for this integration") — this plugin adds no separate auth
-  layer of its own.
+  layer of its own. This plugin's own startup reachability check (§3)
+  runs from its backend with no logged-in session, so with security
+  enabled it gets a 401/403 from `signalk-stowage-mgmt` — treated as
+  "reachable, security is on" rather than "unreachable," since the
+  browser calls that actually create items (§6.1) go through the user's
+  own session, same as any other same-origin caller.
 
 ## 10. MVP Scope
 

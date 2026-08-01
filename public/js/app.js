@@ -34,6 +34,9 @@ function App () {
           this server to create items. ${status.error ? html`<span class="muted">(${status.error})</span>` : null}</p>
         </div>
       ` : null}
+      ${!status.loading && status.available && status.securityEnabled ? html`
+        <p class="muted">Signal K security is enabled — make sure you're logged in, since item creation calls signalk-stowage-mgmt with your browser session.</p>
+      ` : null}
       ${!status.loading && status.available && !capture ? html`
         <${CaptureView} onCaptured=${(c) => setCapture({ ...c, presetLocationId })} />
       ` : null}

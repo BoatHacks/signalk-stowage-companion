@@ -110,12 +110,15 @@ one capture session and discarded on confirm or navigation away.
 - **`signalk-stowage-mgmt` REST API** (hard dependency) — consumed two
   ways:
   - **Startup check**: `plugin/index.js` calls `GET /plugins/
-    signalk-stowage-mgmt/webapp-config` (or another cheap existing
-    endpoint) via `mgmtClient.js` when this plugin starts. If
-    `signalk-stowage-mgmt` isn't installed/running, or reports an
-    incompatible version, this plugin logs a clear startup error and
-    does not serve its webapp as if it were usable — failing fast rather
-    than letting users hit broken API calls later. Exact
+    signalk-stowage-mgmt/webapp-config` via `mgmtClient.js` when this
+    plugin starts. This request carries no Signal K session (it runs
+    from this plugin's own backend, not a logged-in browser), so with
+    Signal K security enabled it gets a 401/403 back — `mgmtClient.js`
+    treats that as "reachable, security is on," not "unreachable,"
+    since it proves `signalk-stowage-mgmt`'s route matched and only its
+    own security layer intervened (SPEC.md §9). Only a connection
+    failure, a 404 (no such route — genuinely not installed), or another
+    error status counts as unreachable. Exact
     version-compatibility check (a `package.json` field lookup vs. a
     dedicated version field `signalk-stowage-mgmt` would need to add) is
     an implementation detail to settle against that plugin's actual

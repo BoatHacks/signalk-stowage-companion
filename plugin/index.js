@@ -21,6 +21,8 @@ module.exports = function (app) {
         `signalk-stowage-companion: signalk-stowage-mgmt not reachable at ${mgmtBaseUrl} (${result.error}). ` +
         'The companion webapp will show an error until this is resolved — see ARCHITECTURE.md §5.'
       )
+    } else if (result.securityEnabled) {
+      app.debug('signalk-stowage-companion: signalk-stowage-mgmt is reachable (Signal K security is enabled — this backend-to-backend check got a 401/403 as expected; browser calls use the user\'s own session)')
     } else {
       app.debug('signalk-stowage-companion: signalk-stowage-mgmt is reachable')
     }

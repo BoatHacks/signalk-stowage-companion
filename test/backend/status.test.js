@@ -6,11 +6,11 @@ const { startTestServer } = require('../../test-helpers/server')
 
 // A throwaway signalk-stowage-mgmt stand-in: just enough to answer
 // GET /webapp-config the way checkStowageMgmtAvailable() expects.
-async function startFakeMgmt ({ ok = true } = {}) {
+async function startFakeMgmt ({ status = 200 } = {}) {
   const app = express()
   app.get('/plugins/signalk-stowage-mgmt/webapp-config', (req, res) => {
-    if (ok) res.json({ autoTheme: false, themeRecommendation: null })
-    else res.status(500).json({ error: 'boom' })
+    if (status === 200) res.json({ autoTheme: false, themeRecommendation: null })
+    else res.status(status).json({ error: 'boom' })
   })
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s))
@@ -19,7 +19,7 @@ async function startFakeMgmt ({ ok = true } = {}) {
 }
 
 test('GET /status reports available: true when signalk-stowage-mgmt responds', async () => {
-  const fakeMgmt = await startFakeMgmt({ ok: true })
+  const fakeMgmt = await startFakeMgmt({ status: 200 })
   const t = await startTestServer({
     options: { mgmtBaseUrl: `http://localhost:${fakeMgmt.port}/plugins/signalk-stowage-mgmt` }
   })
@@ -51,7 +51,7 @@ test('GET /status reports available: false when signalk-stowage-mgmt is unreacha
 })
 
 test('GET /status reports available: false when signalk-stowage-mgmt responds with an error status', async () => {
-  const fakeMgmt = await startFakeMgmt({ ok: false })
+  const fakeMgmt = await startFakeMgmt({ status: 500 })
   const t = await startTestServer({
     options: { mgmtBaseUrl: `http://localhost:${fakeMgmt.port}/plugins/signalk-stowage-mgmt` }
   })
@@ -66,8 +66,41 @@ test('GET /status reports available: false when signalk-stowage-mgmt responds wi
   }
 })
 
+test('GET /status reports available: true when signalk-stowage-mgmt responds with 401 (Signal K security enabled)', async () => {
+  const fakeMgmt = await startFakeMgmt({ status: 401 })
+  const t = await startTestServer({
+    options: { mgmtBaseUrl: `http://localhost:${fakeMgmt.port}/plugins/signalk-stowage-mgmt` }
+  })
+  try {
+    const res = await t.get('/status')
+    const body = await res.json()
+    assert.equal(body.available, true)
+    assert.equal(body.securityEnabled, true)
+    assert.equal(body.error, null)
+  } finally {
+    await t.stop()
+    await fakeMgmt.stop()
+  }
+})
+
+test('GET /status reports available: true when signalk-stowage-mgmt responds with 403', async () => {
+  const fakeMgmt = await startFakeMgmt({ status: 403 })
+  const t = await startTestServer({
+    options: { mgmtBaseUrl: `http://localhost:${fakeMgmt.port}/plugins/signalk-stowage-mgmt` }
+  })
+  try {
+    const res = await t.get('/status')
+    const body = await res.json()
+    assert.equal(body.available, true)
+    assert.equal(body.securityEnabled, true)
+  } finally {
+    await t.stop()
+    await fakeMgmt.stop()
+  }
+})
+
 test('POST /status/refresh re-runs the check and returns the fresh result', async () => {
-  const fakeMgmt = await startFakeMgmt({ ok: false })
+  const fakeMgmt = await startFakeMgmt({ status: 500 })
   const t = await startTestServer({
     options: { mgmtBaseUrl: `http://localhost:${fakeMgmt.port}/plugins/signalk-stowage-mgmt` }
   })
@@ -77,7 +110,7 @@ test('POST /status/refresh re-runs the check and returns the fresh result', asyn
 
     // signalk-stowage-mgmt "comes back up"
     await fakeMgmt.stop()
-    const fakeMgmtV2 = await startFakeMgmt({ ok: true })
+    const fakeMgmtV2 = await startFakeMgmt({ status: 200 })
     // can't change the already-resolved port the plugin is configured
     // with mid-test, so just confirm refresh re-runs the check at all by
     // checking checkedAt moves forward.

@@ -42,6 +42,18 @@ async function checkStowageMgmtAvailable (baseUrl, { timeoutMs = 5000 } = {}) {
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(`${baseUrl}/webapp-config`, { signal: controller.signal })
+    // 401/403 means the request reached signalk-stowage-mgmt and its route
+    // matched — Signal K's own security layer rejected it because this
+    // check runs from this plugin's backend with no logged-in session, not
+    // because signalk-stowage-mgmt is missing. That's expected and fine:
+    // the browser calls that actually matter (SPEC.md §6.1) go through the
+    // user's own session, exactly as signalk-stowage-mgmt's README already
+    // documents for other same-origin callers. Anything else non-OK (404 —
+    // no such route, meaning the plugin genuinely isn't installed; 5xx;
+    // a network-level failure below) means it's actually unreachable.
+    if (res.status === 401 || res.status === 403) {
+      return { available: true, error: null, securityEnabled: true }
+    }
     if (!res.ok) {
       return { available: false, error: `signalk-stowage-mgmt responded with HTTP ${res.status}` }
     }
