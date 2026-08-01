@@ -1,21 +1,19 @@
 const fs = require('fs')
 const path = require('path')
 
-// Signal K server is expected to auto-serve this plugin's whole public/
-// directory as static webapp assets (and demonstrably does for
-// index.html/style.css/js/*.js/vendor/preact-htm-standalone.js), but at
-// least one real deployment 404s specifically on
-// vendor/barcode-detector/zxing_reader.wasm while everything else under
-// public/ loads fine — likely an extension-based allowlist somewhere in
-// front of Signal K (a reverse proxy, or Signal K's own static layer)
-// that doesn't recognize .wasm. Rather than depend on that working,
-// barcode-detector.js's scanner asset is served explicitly through this
-// plugin's own router instead, the same proven-working path /status and
-// /identify already use — deliberately at a path with no corresponding
-// file under public/, so there's nothing for a static-file handler to
-// even match (and therefore no risk of it intercepting the request
-// before this route ever gets a chance to run, regardless of mounting
-// order between Signal K's static serving and this router).
+// Signal K server mounts a plugin's static public/ directory and its
+// registerWithRouter() routes at two genuinely different paths on the
+// same server: static webapp content lives under /<plugin-id>/
+// (src/interfaces/webapps.ts: app.use('/' + moduleData.module,
+// express.static(webappPath))), while registerWithRouter() routes live
+// under /plugins/<plugin-id>/ (per Signal K's own plugin docs). This
+// module deliberately serves the scanner's .wasm binary as a
+// registerWithRouter() route — reachable at /plugins/<plugin-id>/wasm/
+// zxing_reader.wasm — rather than relying on it being picked up by the
+// static mount at the *other* prefix, which is the mistake that caused
+// this to 404 in an earlier version (barcode-detector.js was requesting
+// it under /plugins/<plugin-id>/vendor/..., which is simply the wrong
+// mount point for anything under public/).
 const WASM_PATH = path.join(__dirname, '..', '..', 'public', 'vendor', 'barcode-detector', 'zxing_reader.wasm')
 
 module.exports = function registerVendorRoutes (router) {

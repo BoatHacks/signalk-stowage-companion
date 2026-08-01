@@ -12,13 +12,14 @@ import { BarcodeDetector, setZXingModuleOverrides } from '../vendor/barcode-dete
 // fetch only resolves correctly when the current page URL happens to end
 // in a trailing slash.
 //
-// Served by this plugin's own backend (plugin/routes/vendor.js) at a path
-// with no corresponding file under public/, rather than relying on Signal
-// K's generic static-file serving of public/vendor/barcode-detector/ —
-// at least one real deployment 404s specifically on this .wasm file while
-// everything else under public/ (including nested .js) loads fine,
-// likely an extension-based allowlist somewhere in front of Signal K that
-// doesn't recognize .wasm.
+// Served by this plugin's own backend (plugin/routes/vendor.js) as a
+// registerWithRouter() route, which Signal K mounts under
+// /plugins/<plugin-id>/ — a *different* prefix than the /<plugin-id>/
+// mount it uses for this plugin's static public/ directory (see
+// vendor.js's comment for the exact mechanism). An earlier version of
+// this file requested the .wasm under /plugins/<plugin-id>/vendor/...,
+// assuming that prefix also covered static files from public/ — it
+// doesn't, which is why that 404'd.
 const WASM_URL = '/plugins/signalk-stowage-companion/wasm/zxing_reader.wasm'
 
 setZXingModuleOverrides({
