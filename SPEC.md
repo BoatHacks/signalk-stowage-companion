@@ -135,16 +135,17 @@ entities from that point on, per that plugin's SPEC.md §3.
 
 - **Phone camera** — barcode scan and item photo(s). Requires browser
   camera permission.
-- **Barcode/product lookup** — external service(s) to resolve a scanned
-  barcode to a candidate name/category/description. Exact provider(s):
-  open question (§13).
+- **Barcode/product lookup** — [UPCItemDB](https://www.upcitemdb.com/)
+  resolves a scanned barcode to a candidate name/category/description.
+  Free tier: 100 lookups/day.
 - **Image search** — when identification starts from a photo rather than
-  (or in addition to) a barcode, used to find 1–4 candidate reference
-  photos and supporting name/category guesses.
-- **Manual search** — manufacturer-site heuristic first (guess a
-  support/downloads page from identification data), falling back to
-  general web search, for electric/electronic items specifically. Exact
-  provider(s)/heuristics: open question (§13).
+  (or in addition to) a barcode, [SerpApi](https://serpapi.com/)'s Google
+  Lens engine finds 1–4 candidate reference photos and supporting
+  name/category guesses. Free tier: 250 searches/month.
+- **Manual search** — a SerpApi web search for `"<brand> <model> manual
+  filetype:pdf"`, for electric/electronic items specifically. No
+  manufacturer-site-guessing step (see §12) — one search strategy, kept
+  simple for MVP.
 - **`signalk-stowage-mgmt` REST API** — `GET /locations` for the location
   picker; `GET /categories` for existing categories; all writes on
   confirm (§3.2). This is a same-origin, same-server dependency, not an
@@ -167,12 +168,11 @@ since that dependency is same-server/same-LAN, not internet-dependent
 
 This plugin's own server-side surface (under `/plugins/
 signalk-stowage-companion/`) is limited to what needs to run
-server-side — likely proxying/orchestrating the identification lookups
-(to keep API keys, if any, off the client) and serving the webapp.
-Exact endpoint shapes are an ARCHITECTURE-level concern once the
-identification provider(s) are chosen (§13); this plugin has no REST
-contract that other plugins are expected to depend on (contrast
-`signalk-stowage-mgmt`'s "Known external consumers," §1.2).
+server-side: proxying the UPCItemDB/SerpApi identification lookups (to
+keep API keys off the client, §9) and serving the webapp. Exact endpoint
+shapes are an ARCHITECTURE-level concern (see ARCHITECTURE.md §2.1); this
+plugin has no REST contract that other plugins are expected to depend on
+(contrast `signalk-stowage-mgmt`'s "Known external consumers," §1.2).
 
 ### 6.1 Consumed: `signalk-stowage-mgmt` REST API
 
@@ -230,8 +230,11 @@ state (items, locations, categories, attachments, thumbnails) lives in
   assumes both plugins run on the same Signal K server and this plugin
   calls the other's API same-origin (`/plugins/signalk-stowage-mgmt/*`);
   no cross-server configuration for MVP.
-- Identification provider credentials/settings (API keys, if the chosen
-  provider(s) need them): open question, deferred until §13 is resolved.
+- Identification provider credentials — a UPCItemDB API key and a SerpApi
+  API key, both user-supplied Signal K plugin config fields. Both
+  providers work on their free tier for MVP (100 barcode lookups/day,
+  250 SerpApi searches/month); a boat exceeding that on either service is
+  a scaling problem for a later release, not MVP's concern.
 - Signal K's own security setting governs API access the same way it
   governs `signalk-stowage-mgmt` itself (see that plugin's README.md "A
   note on auth for this integration") — this plugin adds no separate auth
@@ -305,6 +308,22 @@ state (items, locations, categories, attachments, thumbnails) lives in
   less surprising than one that silently vanished after the user thought
   they'd confirmed it. The review screen instead reports which step
   failed and offers retry.
+- **UPCItemDB for barcode lookup, SerpApi for image search and manual
+  search.** Both have usable free tiers for MVP and neither requires
+  scraping (unlike several "Google Lens API" offerings that are
+  ToS-risky reverse-engineered scrapers) — SerpApi is a paid,
+  ToS-compliant service that happens to also have a free tier, and
+  covers both the image-search and manual-search needs with one
+  integration instead of two.
+- **No manufacturer-site-guessing heuristic for manual search.**
+  Originally considered trying to derive a manufacturer's own
+  support/downloads domain from the brand name before falling back to a
+  general search, but dropped for MVP — deriving a reliable domain from a
+  brand string (handling subsidiaries, regional TLDs, rebrands) is a
+  real design problem on its own, and a single SerpApi query for `"<brand>
+  <model> manual filetype:pdf"` gets most of the same result with one
+  code path instead of two. Revisit only if the plain search strategy
+  turns out to miss often enough in practice to justify the complexity.
 - **Offline degrades identification only, not the whole flow.**
   `signalk-stowage-mgmt` is explicitly designed to work with no internet;
   since this plugin talks to it same-server, there's no reason capture,
@@ -320,17 +339,6 @@ state (items, locations, categories, attachments, thumbnails) lives in
 
 ## 13. Open Questions
 
-- **Barcode/product lookup provider(s).** Which service(s) resolve a
-  scanned barcode to name/category/description candidates. Needs
-  evaluation for coverage, cost, and offline-friendliness before
-  ARCHITECTURE locks this in.
-- **Image search provider(s).** Same question for the photo-based
-  identification path.
-- **Manual-PDF search implementation.** The manufacturer-site heuristic
-  ("guess the support/downloads page") needs a concrete strategy — e.g.
-  brand name → known domain mapping, or a search-engine query pattern —
-  before it can be built; currently just a stated preference, not a
-  design.
-- **Identification provider credentials/cost model.** Depends on which
-  provider(s) are chosen above; affects §9 configuration and possibly
-  needs a Signal K plugin-config field for an API key.
+None outstanding — the identification-provider questions this section
+originally tracked were resolved during the ARCHITECTURE brainstorm (see
+§12 for the choices and reasoning).

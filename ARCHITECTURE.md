@@ -22,7 +22,7 @@ plugin/index.js ── startup dependency check, route registration
   ├── plugin/routes/identify.js ── proxies barcode/image/manual lookups
   │     │
   │     ▼
-  │   external lookup provider(s) (SPEC.md §13, TBD)
+  │   UPCItemDB and SerpApi (SPEC.md §5, §12)
   │
   └── (no local database)
 
@@ -50,9 +50,9 @@ results through this plugin's backend before it reaches
 - `routes/identify.js` — one router module: `POST /identify` (barcode or
   photo in, candidate name/category/description/photos out) and
   `POST /identify/manual` (given identification results, search for a
-  manual PDF). Calls out to whichever external provider(s) SPEC.md §13
-  resolves to; provider credentials come from Signal K plugin config
-  (§9 below), never from the client.
+  manual PDF). Calls UPCItemDB (barcode lookups) and SerpApi (image
+  search, manual-PDF web search) — see §4, §5. Provider credentials come
+  from Signal K plugin config (§9 below), never from the client.
 - `mgmtClient.js` — a thin wrapper around `fetch` calls to
   `signalk-stowage-mgmt`'s API, used only by `index.js`'s startup check
   (§5) — the webapp itself talks to `signalk-stowage-mgmt` directly, not
@@ -95,6 +95,8 @@ one capture session and discarded on confirm or navigation away.
 | Backend framework | None — the server's own router | Matches `signalk-stowage-mgmt`; avoids an `express` runtime dependency |
 | Frontend framework | Preact + htm, vendored standalone | Matches `signalk-stowage-mgmt`'s buildless approach (SPEC.md decision, §11) — no bundler, works offline for everything except identification |
 | Barcode scanning | Browser `BarcodeDetector` API, with a vendored pure-JS decoder as fallback | `BarcodeDetector` (Chrome/Android) needs no vendored payload or CPU-heavy decode; a vendored fallback (e.g. a `.mjs`-packaged zxing/zbar build, license/size TBD at implementation time) covers browsers without it, keeping the "works from any phone browser" requirement without a build step |
+| Barcode/product lookup | [UPCItemDB](https://www.upcitemdb.com/) | Usable free tier (100 lookups/day) for MVP; no scraping/ToS risk |
+| Image search & manual-PDF search | [SerpApi](https://serpapi.com/) (Google Lens engine for image search, Google web search for manual PDFs) | One ToS-compliant, non-scraping provider covers both needs; usable free tier (250 searches/month) for MVP |
 | Testing | `node --test` | Matches `signalk-stowage-mgmt`; same rationale (built-in, no extra devDependency) |
 | CI/Release | GitHub Actions, same pattern as `signalk-stowage-mgmt`'s `plugin-ci.yml` / `cut-release.yml` | Consistency; OIDC trusted publishing to npm |
 
@@ -122,10 +124,11 @@ one capture session and discarded on confirm or navigation away.
     /items/:id/categories` — same-origin, direct from `mgmt-api.js`
     (SPEC.md §6.1). No version check on these calls themselves; the
     startup check is the only compatibility gate.
-- **Identification provider(s)** (barcode lookup, image search,
-  manual-PDF search/heuristic) — external HTTP APIs, called only from
-  `plugin/routes/identify.js`, never from the browser directly (keeps any
-  credentials server-side). Concrete provider(s): SPEC.md §13, open.
+- **UPCItemDB** (barcode lookup) and **SerpApi** (image search,
+  manual-PDF web search) — external HTTP APIs, called only from
+  `plugin/routes/identify.js`, never from the browser directly (keeps
+  credentials server-side). See SPEC.md §5, §12 for the choice and
+  reasoning.
 - **npm registry** — OIDC trusted publishing, same pattern as
   `signalk-stowage-mgmt`.
 
@@ -204,8 +207,8 @@ static files by the same plugin process, mounted at
 
 Signal K plugin config fields:
 
-- Identification provider API key(s) — exact fields depend on SPEC.md
-  §13's resolution.
+- UPCItemDB API key.
+- SerpApi API key.
 - `signalk-stowage-mgmt` base path override — defaults to same-origin
   (`/plugins/signalk-stowage-mgmt`); not expected to need overriding for
   MVP since both plugins run on the same server, but present in case a
@@ -219,11 +222,14 @@ Signal K plugin config fields:
   would need a configurable base URL and CORS handling on the
   `signalk-stowage-mgmt` side — not designed now, but the config field
   placeholder above avoids a breaking change if it's needed later.
-- **Caching identification results.** If lookup providers turn out to be
-  slow or rate-limited in practice, `plugin/routes/identify.js` could grow
-  a short-lived in-memory cache (e.g. by barcode value) without changing
-  the stateless-backend framing in SPEC.md §8 — worth revisiting once
-  §13's providers are chosen and real latency/rate-limit numbers exist.
+- **Caching identification results.** UPCItemDB's 100/day and SerpApi's
+  250/month free-tier limits are tight enough that a short-lived
+  in-memory cache in `plugin/routes/identify.js` (e.g. by barcode value)
+  may be worth adding once real usage patterns are known, without
+  changing the stateless-backend framing in SPEC.md §8.
+- **Manufacturer-site-guessing heuristic for manual search.** Dropped for
+  MVP in favor of a single SerpApi query (SPEC.md §12) — revisit only if
+  that plain search strategy misses often enough in practice.
 - **Quick-restock flow** (SPEC.md §10.2) would reuse the same identify →
   draft → create pipeline with a pre-filled draft from an existing item,
   rather than needing new architecture.
