@@ -1,5 +1,7 @@
 const { checkStowageMgmtAvailable, resolveMgmtBaseUrl } = require('./mgmtClient')
+const { jsonBodyParser } = require('./jsonBody')
 const registerStatusRoutes = require('./routes/status')
+const registerIdentifyRoutes = require('./routes/identify')
 
 module.exports = function (app) {
   const plugin = {}
@@ -50,7 +52,7 @@ module.exports = function (app) {
         type: 'string',
         title: 'SerpApi API key',
         description:
-          'Used for photo-based item identification (Google Lens) and manual-PDF search. Free tier: 250 searches/month. Get a key at serpapi.com.',
+          'Used for manual-PDF search on electric/electronic items. Free tier: 250 searches/month. Get a key at serpapi.com. Without a key, manual search is skipped (item creation still works).',
         default: ''
       },
       mgmtBaseUrl: {
@@ -65,7 +67,10 @@ module.exports = function (app) {
 
   // The server mounts this router under /plugins/signalk-stowage-companion
   plugin.registerWithRouter = function (router) {
+    router.use(jsonBodyParser())
+
     registerStatusRoutes(router, () => dependencyStatus, refreshDependencyStatus)
+    registerIdentifyRoutes(router, () => pluginOptions)
 
     // eslint-disable-next-line no-unused-vars
     router.use((err, req, res, next) => {

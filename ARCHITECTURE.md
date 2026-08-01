@@ -96,7 +96,7 @@ one capture session and discarded on confirm or navigation away.
 | Backend runtime | Node.js (same minimum as `signalk-stowage-mgmt`) | Consistency across the two plugins; no backend feature here needs anything newer |
 | Backend framework | None — the server's own router | Matches `signalk-stowage-mgmt`; avoids an `express` runtime dependency |
 | Frontend framework | Preact + htm, vendored standalone | Matches `signalk-stowage-mgmt`'s buildless approach (SPEC.md decision, §11) — no bundler, works offline for everything except identification |
-| Barcode scanning | Browser `BarcodeDetector` API, with a vendored pure-JS decoder as fallback | `BarcodeDetector` (Chrome/Android) needs no vendored payload or CPU-heavy decode; a vendored fallback (e.g. a `.mjs`-packaged zxing/zbar build, license/size TBD at implementation time) covers browsers without it, keeping the "works from any phone browser" requirement without a build step |
+| Barcode scanning | Browser `BarcodeDetector` API against a snapped still photo (`<input type="file" capture>`), no vendored fallback decoder | Snap-and-decode needs no `getUserMedia` stream lifecycle handling and no vendored payload; browsers without `BarcodeDetector` fall back to manual entry via the item-photo path rather than a vendored decoder library — narrower than originally planned (§4 used to call for a vendored fallback + live video), scoped down during implementation to avoid shipping an unverified third-party decoder. See §10 |
 | Barcode/product lookup | [UPCItemDB](https://www.upcitemdb.com/) | Usable free tier (100 lookups/day) for MVP; no scraping/ToS risk. The only automated identification path for MVP — no photo-based path (SPEC.md §11) |
 | Manual-PDF search | [SerpApi](https://serpapi.com/) (Google web search) | ToS-compliant, non-scraping; usable free tier (250 searches/month) for MVP. Not used for image search — SerpApi's Google Lens engine requires a publicly-hosted image URL, which a phone photo on a LAN-only Signal K server doesn't have (SPEC.md §11) |
 | Testing | `node --test` | Matches `signalk-stowage-mgmt`; same rationale (built-in, no extra devDependency) |
@@ -162,31 +162,40 @@ one capture session and discarded on confirm or navigation away.
 
 ```
 plugin/
-  index.js         plugin entrypoint, startup dependency check, route registration
-  mgmtClient.js     signalk-stowage-mgmt startup-check client
+  index.js               plugin entrypoint, startup dependency check, route registration
+  mgmtClient.js           signalk-stowage-mgmt startup-check client
+  jsonBody.js             minimal JSON body parser (no express runtime dep, copied from signalk-stowage-mgmt)
+  providers/
+    upcItemDb.js           barcode lookup (fetchImpl-injectable for tests)
+    serpApi.js              manual-PDF web search (fetchImpl-injectable for tests)
   routes/
-    identify.js     POST /identify/barcode, POST /identify/manual
+    status.js               GET /status, POST /status/refresh
+    identify.js              POST /identify/barcode, POST /identify/manual, GET /identify/manual/fetch
 
 public/
+  package.json            {"type":"module"} — scopes ESM resolution to this
+                          directory only, so the CJS plugin/test code is unaffected
   index.html
   style.css
   js/
-    app.js          capture/identify/draft/create flow state
-    capture.js       camera + barcode scanning
-    draft.js         review screen
-    location-qr.js   parses signalk-stowage-mgmt location deep links
-    mgmt-api.js      fetch wrapper for signalk-stowage-mgmt's API
-    identify-api.js  fetch wrapper for this plugin's own /identify routes
-                     (barcode lookup + manual search only, no image search)
+    app.js                Capturing vs. everything-after-a-capture state
+    capture.js             snap-a-photo barcode scan (BarcodeDetector) + item photo capture
+    draft.js                review screen: identification, category/location pickers, confirm
+    draft-helpers.js        pure logic pulled out of draft.js for unit testing
+    location-qr.js          parses signalk-stowage-mgmt location deep links
+    mgmt-api.js             fetch wrapper + create-on-confirm sequence for signalk-stowage-mgmt's API
+    identify-api.js         fetch wrapper for this plugin's own /identify routes
+    status-api.js           fetch wrapper for this plugin's own /status route
   vendor/
     preact-htm-standalone.js
-    <barcode-decoder>.mjs   (fallback decoder, TBD per §4)
-  assets/icons/
+  assets/icons/             (not yet populated)
 
 test/
-  backend/    real HTTP requests against the mounted plugin, external
-              lookups mocked
-  frontend/   pure data-layer helper tests (location-qr.js, etc.), no DOM
+  backend/    real HTTP requests against the mounted plugin; external
+              lookups mocked (providers.test.js unit-tests the provider
+              modules directly, identify.test.js monkey-patches global.fetch
+              for the route-level integration tests)
+  frontend/   pure data-layer helper tests (location-qr.js, draft-helpers.js), no DOM
 ```
 
 No runtime data directory beyond what Signal K allocates for plugin
@@ -245,3 +254,20 @@ Signal K plugin config fields:
   accepts uploaded bytes directly (e.g. Google Cloud Vision's
   web-detection API) at the cost of a heavier credential setup than a
   plain API key.
+- **Live-video barcode scanning and a vendored fallback decoder.** §4
+  originally called for `getUserMedia`-driven live scanning plus a
+  vendored pure-JS decoder for browsers without `BarcodeDetector`. Scoped
+  down during implementation to snap-a-photo + `BarcodeDetector` only
+  (§4) — live video needs real device/browser testing to get stream
+  lifecycle handling right, and vendoring a third-party decoder needs its
+  license and correctness verified, neither of which was practical to do
+  blind. Browsers without `BarcodeDetector` (mainly non-Chromium mobile
+  browsers) currently have no automated barcode path at all — manual
+  entry via the item-photo capture is the only route. Worth revisiting
+  against a real device before this ships broadly.
+- **Recursive location tree UI.** `draft.js`'s location picker is a flat,
+  indented `<select>` (SPEC.md §7's "tree/search picker" scoped down to
+  the simplest thing that shows hierarchy at all) rather than
+  `signalk-stowage-mgmt`'s actual recursive tree component with search.
+  Fine for boats with a modest location count; revisit if that turns out
+  to not scale.
