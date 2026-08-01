@@ -3,7 +3,7 @@ import { listLocations, listCategories, createItemFromDraft } from './mgmt-api.j
 import { identifyBarcode, searchManual, fetchManualPdf } from './identify-api.js'
 import { suggestedCategoryName, looksElectricOrElectronic, findExistingCategory, sortLocationsAsTree } from './draft-helpers.js'
 import { parseLocationIdFromUrl } from './location-qr.js'
-import { BarcodeDetector } from './barcode-detector.js'
+import { detectBarcode } from './barcode-detector.js'
 
 function fileToDataUri (file) {
   return new Promise((resolve, reject) => {
@@ -104,8 +104,7 @@ export function DraftView ({ capture, onDiscard }) {
     e.target.value = ''
     if (!file) return
     try {
-      const detector = new BarcodeDetector({ formats: ['qr_code'] })
-      const results = await detector.detect(file)
+      const results = await detectBarcode(file, { formats: ['qr_code'] })
       const raw = results[0] && results[0].rawValue
       const id = raw ? parseLocationIdFromUrl(raw) : null
       if (id) setLocationId(id)

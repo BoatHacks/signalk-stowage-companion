@@ -69,8 +69,13 @@ results through this plugin's backend before it reaches
   detection via `barcode-detector.js` (§4), item photo capture.
 - `barcode-detector.js` — wraps the vendored `barcode-detector` ponyfill,
   pointing its ZXing-wasm reader at the locally-vendored `.wasm` file
-  instead of the package's jsDelivr CDN default (§4, §6). Used by both
-  `capture.js` (item barcode) and `draft.js` (location QR label).
+  instead of the package's jsDelivr CDN default (§4, §6). Exports
+  `detectBarcode()`, not the raw `BarcodeDetector` class — it runs a
+  reachability check against the vendored `.wasm` file first, so a wrong
+  path or missing asset surfaces a specific, actionable error instead of
+  the ponyfill's own generic (and, by design, native-API-lookalike)
+  failure message. Used by both `capture.js` (item barcode) and
+  `draft.js` (location QR label).
 - `draft.js` — the Draft review screen: editable fields, location picker
   ordered to match the actual location tree (`sortLocationsAsTree` in
   `draft-helpers.js`, calls `signalk-stowage-mgmt`'s `GET /locations`

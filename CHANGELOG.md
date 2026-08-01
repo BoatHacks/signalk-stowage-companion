@@ -60,3 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the actual location tree (parent immediately followed by its children,
   siblings alphabetical) instead of whatever flat order
   `signalk-stowage-mgmt`'s `GET /locations` happens to return.
+- The `signalk-stowage-mgmt` startup check now uses the literal IP
+  `127.0.0.1` instead of the hostname `localhost`, which Node's fetch can
+  resolve to the IPv6 loopback first — if the server only binds IPv4, or
+  IPv6 is firewalled silently, that hangs instead of failing fast,
+  eventually surfacing as an opaque "This operation was aborted" that
+  looks identical to "signalk-stowage-mgmt isn't running." Both the
+  `/status` payload and the webapp's error banner now also show the exact
+  URL that was tried, with a Retry button (`POST /status/refresh`).
+- Barcode/QR detection failures now run a reachability check against the
+  vendored `.wasm` file before surfacing an error, so a wrong path or
+  missing asset produces a specific, actionable message instead of the
+  ponyfill's generic (and — deliberately, to match the native API's own
+  wording — misleadingly native-sounding) "Barcode detection service
+  unavailable" DOMException.

@@ -1,5 +1,5 @@
 import { html, useState, useRef, useCallback } from '../vendor/preact-htm-standalone.js'
-import { BarcodeDetector } from './barcode-detector.js'
+import { detectBarcode } from './barcode-detector.js'
 
 // BarcodeDetector's live-video-stream mode (ARCHITECTURE.md §4's original
 // framing) needs real getUserMedia stream lifecycle handling that's hard to
@@ -20,8 +20,7 @@ import { BarcodeDetector } from './barcode-detector.js'
 const PRODUCT_BARCODE_FORMATS = ['upc_a', 'upc_e', 'ean_8', 'ean_13', 'code_128', 'itf']
 
 async function detectBarcodeInFile (file) {
-  const detector = new BarcodeDetector({ formats: PRODUCT_BARCODE_FORMATS })
-  const results = await detector.detect(file)
+  const results = await detectBarcode(file, { formats: PRODUCT_BARCODE_FORMATS })
   return results.length ? results[0].rawValue : null
 }
 
