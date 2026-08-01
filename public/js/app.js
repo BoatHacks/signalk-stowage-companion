@@ -1,5 +1,5 @@
 import { html, render, useState, useEffect } from '../vendor/preact-htm-standalone.js'
-import { fetchStatus } from './status-api.js'
+import { fetchStatus, refreshStatus } from './status-api.js'
 import { CaptureView } from './capture.js'
 import { DraftView } from './draft.js'
 import { parseLocationIdFromUrl } from './location-qr.js'
@@ -23,6 +23,12 @@ function App () {
     return () => { cancelled = true }
   }, [])
 
+  const retryStatus = () => {
+    setStatus((s) => ({ ...s, loading: true }))
+    refreshStatus().then((s) => setStatus({ loading: false, ...s }))
+      .catch((err) => setStatus({ loading: false, available: false, error: err.message }))
+  }
+
   return html`
     <header>Stowage Companion</header>
     <main>
@@ -32,6 +38,8 @@ function App () {
           <strong>signalk-stowage-mgmt isn't reachable.</strong>
           <p>This plugin needs signalk-stowage-mgmt installed and running on
           this server to create items. ${status.error ? html`<span class="muted">(${status.error})</span>` : null}</p>
+          ${status.baseUrl ? html`<p class="muted">Tried: ${status.baseUrl}</p>` : null}
+          <p><button onClick=${retryStatus}>Retry</button></p>
         </div>
       ` : null}
       ${!status.loading && status.available && status.securityEnabled ? html`

@@ -10,3 +10,9 @@ export async function fetchStatus () {
   if (!res.ok) throw new Error(`status check failed: HTTP ${res.status}`)
   return res.json()
 }
+
+export async function refreshStatus () {
+  const res = await fetch(BASE + '/status/refresh', { method: 'POST' })
+  if (!res.ok) throw new Error(`status refresh failed: HTTP ${res.status}`)
+  return res.json()
+}

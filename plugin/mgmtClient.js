@@ -20,6 +20,17 @@ const DEFAULT_MGMT_BASE_PATH = '/plugins/signalk-stowage-mgmt'
 // own server. Prefer that over guessing from the PORT env var, which is
 // only set if the server happened to be *launched* with that env var —
 // not a reliable reflection of settings.json's configured port.
+// Literal 127.0.0.1, not the hostname "localhost" — Node's fetch (undici)
+// can resolve "localhost" to the IPv6 loopback (::1) first. If the server
+// only binds IPv4, or IPv6 is firewalled by silently dropping packets
+// rather than actively refusing the connection, that attempt doesn't fail
+// fast — it hangs until something times it out, surfacing as "This
+// operation was aborted" once checkStowageMgmtAvailable's own timeout
+// fires, which looks identical to "signalk-stowage-mgmt isn't running" but
+// isn't. A literal IPv4 address sidesteps the DNS resolution step (and the
+// dual-stack ambiguity) entirely.
+const LOOPBACK = '127.0.0.1'
+
 function resolveMgmtBaseUrl (options, app) {
   if (options && options.mgmtBaseUrl) return options.mgmtBaseUrl
 
@@ -27,14 +38,14 @@ function resolveMgmtBaseUrl (options, app) {
   if (settings && (settings.port || settings.sslport)) {
     const ssl = !!settings.ssl
     const port = ssl ? (settings.sslport || 443) : (settings.port || 3000)
-    return `${ssl ? 'https' : 'http'}://localhost:${port}${DEFAULT_MGMT_BASE_PATH}`
+    return `${ssl ? 'https' : 'http'}://${LOOPBACK}:${port}${DEFAULT_MGMT_BASE_PATH}`
   }
 
   // Fallback for when app.config.settings isn't available (shouldn't
   // normally happen against a real Signal K server, but keeps this
   // function usable in isolation/tests without a full fake app).
   const port = process.env.PORT || 3000
-  return `http://localhost:${port}${DEFAULT_MGMT_BASE_PATH}`
+  return `http://${LOOPBACK}:${port}${DEFAULT_MGMT_BASE_PATH}`
 }
 
 async function checkStowageMgmtAvailable (baseUrl, { timeoutMs = 5000 } = {}) {
@@ -52,14 +63,20 @@ async function checkStowageMgmtAvailable (baseUrl, { timeoutMs = 5000 } = {}) {
     // no such route, meaning the plugin genuinely isn't installed; 5xx;
     // a network-level failure below) means it's actually unreachable.
     if (res.status === 401 || res.status === 403) {
-      return { available: true, error: null, securityEnabled: true }
+      return { available: true, error: null, securityEnabled: true, baseUrl }
     }
     if (!res.ok) {
-      return { available: false, error: `signalk-stowage-mgmt responded with HTTP ${res.status}` }
+      return { available: false, error: `signalk-stowage-mgmt responded with HTTP ${res.status}`, baseUrl }
     }
-    return { available: true, error: null }
+    return { available: true, error: null, baseUrl }
   } catch (err) {
-    return { available: false, error: err.message }
+    // err.name is 'AbortError' when the timeout above fired — "the request
+    // never got a response," not "the request failed outright" (e.g. an
+    // immediate ECONNREFUSED throws a different, more specific message).
+    // Surfacing the distinction (and the URL that hung) turns "isn't
+    // reachable" from a dead end into something actually debuggable.
+    const detail = err.name === 'AbortError' ? `timed out after ${timeoutMs}ms with no response` : err.message
+    return { available: false, error: detail, baseUrl }
   } finally {
     clearTimeout(timeout)
   }

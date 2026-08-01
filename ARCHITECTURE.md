@@ -241,7 +241,10 @@ Signal K plugin config fields:
 - SerpApi API key.
 - `signalk-stowage-mgmt` base URL override (`mgmtBaseUrl`) — used only by
   this plugin's own backend for its startup reachability check (§5);
-  defaults to `http(s)://localhost:<port>/plugins/signalk-stowage-mgmt`,
+  defaults to `http(s)://127.0.0.1:<port>/plugins/signalk-stowage-mgmt`
+  (literal loopback IP, not the hostname `localhost` — sidesteps a
+  dual-stack IPv4/IPv6 DNS resolution gotcha that can turn a missing
+  service into a several-second hang instead of an instant failure),
   derived from this server's own `app.config.settings.port`/`sslport`/
   `ssl` (the same fields signalk-server itself reads internally, and the
   pattern real-world community plugins use to call back into their own
