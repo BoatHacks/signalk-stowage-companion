@@ -209,10 +209,13 @@ Signal K plugin config fields:
 
 - UPCItemDB API key.
 - SerpApi API key.
-- `signalk-stowage-mgmt` base path override — defaults to same-origin
-  (`/plugins/signalk-stowage-mgmt`); not expected to need overriding for
-  MVP since both plugins run on the same server, but present in case a
-  future deployment splits them (see §9 below, Future Considerations).
+- `signalk-stowage-mgmt` base URL override (`mgmtBaseUrl`) — used only by
+  this plugin's own backend for its startup reachability check (§5);
+  defaults to `http://localhost:<PORT env var, or 3000>/plugins/
+  signalk-stowage-mgmt` since a Node backend can't resolve a same-origin
+  relative path the way a browser can. The browser-side webapp is
+  unaffected by this setting and always calls `signalk-stowage-mgmt`
+  same-origin/relative, per SPEC.md's same-origin assumption.
 
 ## 10. Future Considerations
 
