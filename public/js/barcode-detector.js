@@ -11,11 +11,18 @@ import { BarcodeDetector, setZXingModuleOverrides } from '../vendor/barcode-dete
 // Absolute path, not relative — see status-api.js's comment: a relative
 // fetch only resolves correctly when the current page URL happens to end
 // in a trailing slash.
-const WASM_DIR = '/plugins/signalk-stowage-companion/vendor/barcode-detector'
-const WASM_URL = `${WASM_DIR}/zxing_reader.wasm`
+//
+// Served by this plugin's own backend (plugin/routes/vendor.js) at a path
+// with no corresponding file under public/, rather than relying on Signal
+// K's generic static-file serving of public/vendor/barcode-detector/ —
+// at least one real deployment 404s specifically on this .wasm file while
+// everything else under public/ (including nested .js) loads fine,
+// likely an extension-based allowlist somewhere in front of Signal K that
+// doesn't recognize .wasm.
+const WASM_URL = '/plugins/signalk-stowage-companion/wasm/zxing_reader.wasm'
 
 setZXingModuleOverrides({
-  locateFile: (path, prefix) => (path.endsWith('.wasm') ? `${WASM_DIR}/${path}` : prefix + path)
+  locateFile: (path, prefix) => (path.endsWith('.wasm') ? WASM_URL : prefix + path)
 })
 
 // If WASM module init fails for any reason (wrong path, a proxy stripping
@@ -36,7 +43,8 @@ function checkWasmReachable () {
       if (!res.ok) {
         throw new Error(
           `Barcode scanner assets not reachable (HTTP ${res.status} for ${WASM_URL}) — ` +
-          'check that public/vendor/barcode-detector/ was installed with the rest of the plugin.'
+          'check that this plugin was installed/updated fully (plugin/routes/vendor.js and ' +
+          'public/vendor/barcode-detector/zxing_reader.wasm should both be present).'
         )
       }
     }).catch((err) => {

@@ -2,6 +2,7 @@ const { checkStowageMgmtAvailable, resolveMgmtBaseUrl } = require('./mgmtClient'
 const { jsonBodyParser } = require('./jsonBody')
 const registerStatusRoutes = require('./routes/status')
 const registerIdentifyRoutes = require('./routes/identify')
+const registerVendorRoutes = require('./routes/vendor')
 
 module.exports = function (app) {
   const plugin = {}
@@ -73,6 +74,7 @@ module.exports = function (app) {
 
     registerStatusRoutes(router, () => dependencyStatus, refreshDependencyStatus)
     registerIdentifyRoutes(router, () => pluginOptions)
+    registerVendorRoutes(router)
 
     // eslint-disable-next-line no-unused-vars
     router.use((err, req, res, next) => {

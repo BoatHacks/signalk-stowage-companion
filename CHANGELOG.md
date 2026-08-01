@@ -74,3 +74,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ponyfill's generic (and — deliberately, to match the native API's own
   wording — misleadingly native-sounding) "Barcode detection service
   unavailable" DOMException.
+- That reachability check then surfaced a real 404 on
+  `zxing_reader.wasm` in a real deployment, while every other file under
+  `public/` (including nested `.js`) loaded fine — likely an
+  extension-based allowlist somewhere in front of Signal K that doesn't
+  recognize `.wasm`. The scanner's WASM binary is now served explicitly
+  through this plugin's own router (`GET /wasm/zxing_reader.wasm`, new
+  `plugin/routes/vendor.js`) instead of depending on generic static-file
+  serving for it.

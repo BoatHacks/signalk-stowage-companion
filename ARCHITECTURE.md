@@ -59,6 +59,13 @@ results through this plugin's backend before it reaches
   `signalk-stowage-mgmt`'s API, used only by `index.js`'s startup check
   (§5) — the webapp itself talks to `signalk-stowage-mgmt` directly, not
   through this module.
+- `routes/vendor.js` — `GET /wasm/zxing_reader.wasm`, serving the
+  barcode-scanner WASM binary explicitly rather than relying on Signal
+  K's generic static serving of `public/`, which 404s on it in at least
+  one real deployment while everything else under `public/` loads fine
+  (§4). Deliberately not at a path with a corresponding file under
+  `public/`, so there's nothing for a static-file handler to match
+  regardless of mounting order.
 - No `db.js`, no `tx.js` — nothing here persists (SPEC.md §8).
 
 ### 2.2 Frontend SPA (`public/js/`)
@@ -186,6 +193,7 @@ plugin/
   routes/
     status.js               GET /status, POST /status/refresh
     identify.js              POST /identify/barcode, POST /identify/manual, GET /identify/manual/fetch
+    vendor.js                 GET /wasm/zxing_reader.wasm (explicit, not relying on static serving)
 
 public/
   package.json            {"type":"module"} — scopes ESM resolution to this
